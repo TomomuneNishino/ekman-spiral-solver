@@ -1,0 +1,11 @@
+{
+  "name": "ekman-spiral-solver",
+  "version": "1.0.0",
+  "description": "Wind-driven Ekman layer: a verified 1-D PDE solver with a browser front end",
+  "type": "module",
+  "scripts": {
+    "verify": "node tests/verify.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

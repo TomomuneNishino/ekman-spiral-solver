@@ -1,0 +1,20 @@
+# Runs the verification suite on every push, so the "20 / 20 checks passed"
+# claim in the README is continuously re-checked rather than asserted once.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run the verification suite
+        run: node tests/verify.mjs

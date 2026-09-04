@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>海洋エクマン層シミュレーター — 風が海を動かす様子を再現する</title>
+<meta name="description" content="風に駆動される海洋エクマン層の偏微分方程式をブラウザ上で解き、保存則と解析解によって答えの正しさを確かめる。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --abyss:#061E29;      /* 外洋の地色 */
+  --deep:#0C2C3A;       /* パネル */
+  --shelf:#1B4A5D;      /* 罫線 */
+  --foam:#E9F2F4;       /* 主要な文字 */
+  --haze:#8CAEBB;       /* 補助的な文字 */
+  --current:#F0B429;    /* 風応力・強調 */
+  --ok:#63C9A8;
+  --alert:#E8705A;
+  --surface-hue:#7EE7E8;
+  --radius:6px;
+  --jp:"Noto Sans JP","Hiragino Sans","Noto Sans CJK JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif;
+  --jp-display:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans CJK JP",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--abyss);
+  color:var(--foam);
+  font:400 15px/1.85 var(--jp);
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--surface-hue)}
+
+/* ---------- ヘッダ ---------- */
+.masthead{
+  border-bottom:1px solid var(--shelf);
+  background:linear-gradient(180deg,#0A2734 0%,var(--abyss) 100%);
+  padding:36px 28px 28px;
+}
+.masthead-inner{max-width:1420px;margin:0 auto}
+.masthead h1{
+  font:700 clamp(26px,4vw,46px)/1.3 var(--jp-display);
+  letter-spacing:-.01em;margin:0 0 14px;
+}
+.masthead h1 em{font-style:normal;color:var(--surface-hue)}
+.standfirst{max-width:52em;color:var(--haze);margin:0 0 20px;font-size:15px}
+.eqline{
+  display:flex;flex-wrap:wrap;gap:10px 30px;align-items:baseline;margin:0;
+  font:400 14.5px/1.7 var(--mono);color:var(--foam);
+}
+.eqline b{font-weight:400;white-space:nowrap}
+.eqline span{color:var(--haze);font-family:var(--jp);font-size:12.5px;margin-right:10px}
+
+/* ---------- レイアウト ---------- */
+.wrap{max-width:1420px;margin:0 auto;padding:24px 28px 72px;display:grid;
+      grid-template-columns:302px minmax(0,1fr);gap:26px;align-items:start}
+@media (max-width:1000px){.wrap{grid-template-columns:1fr;padding:20px 16px 56px}}
+
+/* ---------- 操作パネル ---------- */
+.rail{position:sticky;top:20px;background:var(--deep);border:1px solid var(--shelf);
+      border-radius:var(--radius);padding:18px}
+@media (max-width:1000px){.rail{position:static}}
+.rail h2{font:500 12.5px/1 var(--jp);letter-spacing:.04em;
+         color:var(--haze);margin:0 0 14px}
+.field{margin-bottom:15px}
+.field > label{display:flex;justify-content:space-between;align-items:baseline;
+               font-size:13px;color:var(--haze);margin-bottom:5px;gap:8px;line-height:1.5}
+.field .val{font:500 13px var(--mono);color:var(--foam);white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--current);height:20px}
+select{width:100%;background:var(--abyss);color:var(--foam);border:1px solid var(--shelf);
+       border-radius:4px;padding:6px 8px;font:400 13.5px var(--jp)}
+button{font:500 13.5px var(--jp);cursor:pointer;
+       background:var(--shelf);color:var(--foam);border:1px solid var(--shelf);
+       border-radius:4px;padding:8px 14px}
+button:hover{background:#245C72}
+button.primary{background:var(--current);color:#20180A;border-color:var(--current)}
+button.primary:hover{filter:brightness(1.08)}
+:focus-visible{outline:2px solid var(--current);outline-offset:2px}
+.rail-note{border-top:1px solid var(--shelf);margin-top:16px;padding-top:14px;
+           font-size:12.5px;color:var(--haze);line-height:1.75}
+
+/* ---------- 数値表示 ---------- */
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+         gap:0;background:var(--deep);border:1px solid var(--shelf);
+         border-radius:var(--radius);overflow:hidden;margin-bottom:20px}
+.readout div{padding:11px 13px;border-right:1px solid var(--shelf);
+             border-bottom:1px solid var(--shelf)}
+.readout dt{font-size:12px;color:var(--haze);margin:0 0 3px;line-height:1.5}
+.readout dd{margin:0;font:500 17px/1.3 var(--mono)}
+.readout dd small{font-size:11.5px;color:var(--haze);font-weight:400;font-family:var(--jp)}
+
+/* ---------- タブ ---------- */
+.tabs{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--shelf);margin-bottom:20px}
+.tabs button{background:none;border:none;border-bottom:2px solid transparent;
+             border-radius:0;color:var(--haze);padding:9px 16px;font-size:14px}
+.tabs button:hover{background:rgba(27,74,93,.35);color:var(--foam)}
+.tabs button[aria-selected=true]{color:var(--foam);border-bottom-color:var(--current)}
+
+/* ---------- 図 ---------- */
+.panel[hidden]{display:none}
+.figgrid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+/* 螺旋タブだけは小さい図が 3 つ並ぶので、より詰めた最小幅を許す */
+#panel-spiral .figgrid{grid-template-columns:repeat(auto-fit,minmax(312px,1fr))}
+figure{margin:0;background:var(--deep);border:1px solid var(--shelf);
+       border-radius:var(--radius);padding:14px 14px 10px}
+figure.wide{grid-column:1/-1}
+figcaption{color:var(--haze);font-size:12.5px;margin-top:9px;max-width:46em;line-height:1.85}
+figcaption b{color:var(--foam);font-weight:500}
+figure h3{font:500 14.5px/1.5 var(--jp);margin:0 0 10px;color:var(--foam)}
+canvas{width:100%;display:block;background:transparent}
+.c-tall{height:430px}
+.c-mid{height:300px}
+.c-short{height:210px}
+.hero{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(250px,1fr);gap:22px;align-items:start}
+@media (max-width:820px){.hero{grid-template-columns:1fr}}
+.key{margin:2px 0 14px}
+.key .ramp{height:12px;border-radius:3px;border:1px solid var(--shelf)}
+.key .keyticks{position:relative;height:15px;margin-top:1px}
+.key .keyticks span{position:absolute;transform:translateX(-50%);top:5px;
+  font:400 10px var(--mono);color:var(--haze);white-space:nowrap}
+.key .keyticks span::before{content:"";position:absolute;left:50%;top:-5px;
+  width:1px;height:4px;background:var(--shelf)}
+.key .keyends{display:flex;justify-content:space-between;color:var(--haze);
+  font-size:12px;margin-top:3px}
+
+/* ---------- 再生バー ---------- */
+.playbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+         background:var(--deep);border:1px solid var(--shelf);
+         border-radius:var(--radius);padding:12px 14px;margin-bottom:18px}
+.playbar input[type=range]{flex:1;min-width:180px}
+.playbar .clock{font:500 13px var(--mono);min-width:24ch}
+
+/* ---------- 検証タブ ---------- */
+.vgroup{background:var(--deep);border:1px solid var(--shelf);border-radius:var(--radius);
+        padding:16px 18px;margin-bottom:16px}
+.vgroup h3{font:700 16px/1.5 var(--jp-display);margin:0 0 12px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font:400 12.5px var(--mono)}
+th,td{text-align:right;padding:6px 10px;border-bottom:1px solid rgba(27,74,93,.6);white-space:nowrap}
+th{color:var(--haze);font-weight:500;font-family:var(--jp);font-size:12px}
+td:first-child,th:first-child{text-align:left}
+.vnote{color:var(--haze);font-size:13px;margin:12px 0 0;max-width:46em;
+       font-family:var(--jp);line-height:1.9}
+.vcheck{display:flex;gap:10px;align-items:baseline;padding:8px 0;
+        border-top:1px solid rgba(27,74,93,.6);font-size:13.5px}
+.vcheck:first-of-type{margin-top:12px}
+.badge{font:500 11px/1 var(--jp);padding:4px 7px;border-radius:3px;flex:none}
+.badge.pass{background:rgba(99,201,168,.16);color:var(--ok)}
+.badge.fail{background:rgba(232,112,90,.18);color:var(--alert)}
+.vcheck code{font-family:var(--mono);color:var(--haze);font-size:12.5px}
+.summary{font:700 16px var(--jp-display);padding:14px 18px;border-radius:var(--radius);
+         border:1px solid var(--shelf);margin-bottom:18px;background:var(--deep)}
+.summary.pass{border-color:rgba(99,201,168,.5)}
+.summary.fail{border-color:rgba(232,112,90,.5)}
+
+.prose{max-width:46em;color:var(--haze);font-size:14px;line-height:1.95}
+.prose strong{color:var(--foam);font-weight:500}
+.vbuttons{display:flex;flex-wrap:wrap;gap:10px}
+.prose ol{margin:10px 0 0;padding-left:1.7em}
+.prose ol li{margin-bottom:8px;padding-left:2px}
+footer{border-top:1px solid var(--shelf);padding:22px 28px;color:var(--haze);font-size:13px}
+footer div{max-width:1420px;margin:0 auto}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <h1>風が東へ吹くとき、<br>海は<em>南へ</em>運ばれる。</h1>
+    <p class="standfirst">
+      地球の自転により、海面の流れは風の向きから右へずれる（南半球では左へ）。
+      ずれの角度は水深とともに大きくなり、流速ベクトルは螺旋を描く。
+      このページは、V. W. Ekman が 1905 年に導いたこの構造をブラウザ上で数値的に解く。
+      得られた数値解が正しいことを、保存則と解析解との比較から確かめる。
+    </p>
+    <p class="eqline">
+      <b><span>解く式</span> ∂W/∂t = ν<sub>z</sub> ∂²W/∂z² − i f W</b>
+      <b><span>海面</span> ρ₀ν<sub>z</sub> ∂W/∂z = τ<sub>x</sub> + iτ<sub>y</sub></b>
+      <b><span>ただし</span> W = u + iv</b>
+    </p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <aside class="rail">
+    <h2>海と風</h2>
+
+    <div class="field">
+      <label for="lat"><span>緯度</span> <span class="val" id="lat-v">北緯 45°</span></label>
+      <input type="range" id="lat" min="-75" max="75" step="1" value="45">
+    </div>
+    <div class="field">
+      <label for="taum"><span>風応力の大きさ</span> <span class="val" id="taum-v">0.10 N/m²</span></label>
+      <input type="range" id="taum" min="0.01" max="0.5" step="0.01" value="0.1">
+    </div>
+    <div class="field">
+      <label for="taud"><span>風の向き</span> <span class="val" id="taud-v">東向き</span></label>
+      <input type="range" id="taud" min="0" max="345" step="15" value="0">
+    </div>
+    <div class="field">
+      <label for="nu"><span>鉛直渦粘性係数 ν<sub>z</sub></span> <span class="val" id="nu-v">1.0e-2 m²/s</span></label>
+      <input type="range" id="nu" min="-3.3" max="-0.7" step="0.05" value="-2">
+    </div>
+
+    <h2 style="margin-top:22px">数値設定</h2>
+    <div class="field">
+      <label for="hd"><span>計算領域の深さ</span> <span class="val" id="hd-v">6 D_E</span></label>
+      <input type="range" id="hd" min="1" max="14" step="0.5" value="6">
+    </div>
+    <div class="field">
+      <label for="nz"><span>鉛直格子数</span> <span class="val" id="nz-v">120</span></label>
+      <input type="range" id="nz" min="10" max="400" step="10" value="120">
+    </div>
+    <div class="field">
+      <label for="bot"><span>海底の条件</span></label>
+      <select id="bot">
+        <option value="free">応力なし（∂W/∂z = 0）</option>
+        <option value="noslip">粘着（W = 0）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="steps"><span>慣性周期あたりのステップ数</span> <span class="val" id="steps-v">120</span></label>
+      <input type="range" id="steps" min="10" max="400" step="10" value="120">
+    </div>
+    <div class="field">
+      <label for="sch"><span>時間積分スキーム</span></label>
+      <select id="sch">
+        <option value="cn">Crank–Nicolson（陰解法）</option>
+        <option value="euler">前進 Euler（陽解法）</option>
+      </select>
+    </div>
+
+    <button id="reset">基準ケースに戻す</button>
+    <p class="rail-note" id="rail-note"></p>
+  </aside>
+
+  <main>
+    <dl class="readout" id="readout"></dl>
+
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="spiral" aria-selected="true">螺旋</button>
+      <button role="tab" data-tab="spinup" aria-selected="false">立ち上がり</button>
+      <button role="tab" data-tab="budget" aria-selected="false">収支</button>
+      <button role="tab" data-tab="pump" aria-selected="false">湧昇</button>
+      <button role="tab" data-tab="verify" aria-selected="false">検証</button>
+    </nav>
+
+    <!-- ------------------------------------------------ 螺旋 -->
+    <section class="panel" id="panel-spiral">
+      <div class="figgrid">
+        <figure class="wide">
+          <div class="hero">
+            <canvas id="c-hodo" class="c-tall"></canvas>
+            <div>
+              <h3>上から見た流れ ― 深くなるほど向きが変わる</h3>
+              <div class="key">
+                <div class="ramp" id="key-ramp"></div>
+                <div class="keyticks" id="key-ticks"></div>
+                <div class="keyends"><span>海面</span><span id="key-bot"></span></div>
+              </div>
+              <figcaption id="cap-hodo"></figcaption>
+            </div>
+          </div>
+        </figure>
+        <figure>
+          <h3>東西成分と南北成分の鉛直分布</h3>
+          <canvas id="c-prof" class="c-mid"></canvas>
+          <figcaption>点は数値解が各セルで持つ値、帯は同じ有限深さ問題の解析解。
+            格子を粗くすると点はまばらになるが、帯は解析解そのものなので滑らかなままである。</figcaption>
+        </figure>
+        <figure>
+          <h3>流速の深さ依存性（対数軸）</h3>
+          <canvas id="c-prof2" class="c-mid"></canvas>
+          <figcaption>数値解は対数グラフで直線に乗っており、流速が深さ方向に対して指数的に
+            減衰することがわかる。exp(z/D<sub>E</sub>) を表す破線と傾きが等しいことから、
+            流れが存在する層の厚さのスケールがちょうどエクマン深さ D<sub>E</sub> となっていることが
+            読み取れる。底での折れ曲がりは応力なし条件の影響で、計算領域を深くすると下へ後退する。</figcaption>
+        </figure>
+        <figure>
+          <h3>流向の深さ依存性</h3>
+          <canvas id="c-prof3" class="c-mid"></canvas>
+          <figcaption id="cap-prof3"></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------ 立ち上がり -->
+    <section class="panel" id="panel-spinup" hidden>
+      <div class="playbar">
+        <button id="play" class="primary">再生</button>
+        <input type="range" id="tslider" min="0" max="100" step="1" value="0">
+        <span class="clock" id="clock"></span>
+      </div>
+      <div class="figgrid">
+        <figure>
+          <h3>螺旋ができていく様子</h3>
+          <canvas id="c-anim" class="c-mid"></canvas>
+          <figcaption>静止した海に、t = 0 から風を吹かせ続ける。太い線は最終的に落ち着く定常解。</figcaption>
+        </figure>
+        <figure>
+          <h3>鉛直積分した輸送の軌跡</h3>
+          <canvas id="c-traj" class="c-mid"></canvas>
+          <figcaption id="cap-traj"></figcaption>
+        </figure>
+        <figure class="wide">
+          <h3>輸送の時間変化</h3>
+          <canvas id="c-mts" class="c-short"></canvas>
+          <figcaption>細い線が数値解、太い帯が厳密解 −i(T/f)(1 − e<sup>−ift</sup>)。
+            この厳密解には粘性も領域の深さも格子も含まれていないので、
+            ずれがあればそれは時間積分の誤差だけである。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------ 収支 -->
+    <section class="panel" id="panel-budget" hidden>
+      <div class="figgrid">
+        <figure>
+          <h3>海水の運動エネルギーは、風の仕事と粘性散逸の差に一致するか</h3>
+          <canvas id="c-energy" class="c-mid"></canvas>
+          <figcaption id="cap-energy"></figcaption>
+        </figure>
+        <figure>
+          <h3>運動量保存とエネルギー保存が、各ステップでどれだけ破れているか</h3>
+          <canvas id="c-resid" class="c-mid"></canvas>
+          <figcaption id="cap-resid"></figcaption>
+        </figure>
+        <figure class="wide">
+          <h3>風が海に与える仕事率と、粘性が奪う仕事率</h3>
+          <canvas id="c-power" class="c-short"></canvas>
+          <figcaption>どちらも解析値 |τ|²/(ρ₀ f D<sub>E</sub>)（点線）に落ち着く。
+            振動しているのは、t = 0 から風を吹かせ続けたことで生じた慣性振動の名残である。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------ 湧昇 -->
+    <section class="panel" id="panel-pump" hidden>
+      <p class="prose">貿易風や偏西風のように、風が緯度によって変わる場合を考える。
+        すると隣り合う緯度で運ばれる水の量が食い違い、水が足りない帯と余る帯ができる。
+        足りないぶんは層の下から汲み上げられ、余ったぶんは押し下げられる。これがエクマン湧昇である。
+        風応力を緯度の関数にしても、方程式には水平方向の微分が現れないので、
+        各緯度は独立な鉛直 1 次元問題のままである。つまり 2 次元の計算をする必要はなく、
+        同じ数値解法を緯度ごとに何度も呼び、あとは輸送の南北方向の発散を取るだけでよい。</p>
+      <div class="figgrid" style="margin-top:18px">
+        <figure>
+          <h3>風応力と、それが駆動する輸送</h3>
+          <canvas id="c-pump1" class="c-mid"></canvas>
+          <figcaption>輸送は常に風の 90° 右向き（北半球）なので、東向きのジェットは
+            その北側で水を南へ押し出すことになる。</figcaption>
+        </figure>
+        <figure>
+          <h3>層の底での鉛直流（エクマン湧昇）</h3>
+          <canvas id="c-pump2" class="c-mid"></canvas>
+          <figcaption id="cap-pump"></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------ 検証 -->
+    <section class="panel" id="panel-verify" hidden>
+      <div class="prose">
+        <p>数値解の妥当性を知るため、次の三点を確かめる。</p>
+        <ol>
+          <li>差分方程式が満たすはずの<strong>保存則</strong>（運動量保存、エネルギー保存など）を
+            コードが再現できているか。</li>
+          <li>格子幅 Δz・時間刻み Δt を細かくした時、領域の深さ H を大きくした時、
+            誤差が離散化手法から期待される速さでゼロに近づくか（<strong>収束次数</strong>）。</li>
+          <li>エクマン螺旋（解析解）が満たす主要な<strong>物理的性質</strong>
+            （海面で風に対して 45° 右を向く流れ、層全体では 90° 右へ τ/f のエクマン輸送）が
+            再現できているか。</li>
+        </ol>
+        <p style="margin-bottom:16px">以下はすべてこの場で計算しており、他のタブの図を描いているのと
+          同じソースファイルを使っている。計算所要時間は長くて 1 秒程度である。</p>
+      </div>
+      <div class="vbuttons">
+        <button id="runv" class="primary">基準ケースで検証を実行</button>
+        <button id="runv-live">左のスライダーの値で検証を実行</button>
+      </div>
+      <div id="vout" style="margin-top:20px"></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div>
+    海洋エクマン層シミュレーター。鉛直方向のスタガード有限体積、時間方向は Crank–Nicolson法、
+    風応力は海面のフラックスとして与えている。手法の詳細と検証スイートは
+    <a href="https://github.com/TomomuneNishino/ekman-spiral-solver">リポジトリ</a>にある。
+  </div>
+</footer>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
